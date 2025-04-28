@@ -1,0 +1,178 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  terraformVersion: '1.5.7'
+  terraformWorkingDirectory: '$(Build.ArtifactStagingDirectory)'
+
+stages:
+- stage: Validate
+  displayName: 'Validar Infraestructura'
+  jobs:
+  - job: ValidateTerraform
+    displayName: 'Validar Terraform'
+    steps:
+    - checkout: self
+    
+    # Copiar archivos a un directorio limpio para evitar problemas de ruta
+    - task: CopyFiles@2
+      displayName: 'Copiar archivos de Terraform'
+      inputs:
+        SourceFolder: '$(System.DefaultWorkingDirectory)/microservice-infrastructure'
+        Contents: '**'
+        TargetFolder: '$(terraformWorkingDirectory)'
+    
+    - task: TerraformInstaller@0
+      displayName: 'Instalar Terraform $(terraformVersion)'
+      inputs:
+        terraformVersion: $(terraformVersion)
+    
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(terraformWorkingDirectory)'
+        backendServiceArm: 'AzureServiceConnect'
+        backendAzureRmResourceGroupName: 'rg-microservice-app'
+        backendAzureRmStorageAccountName: 'tfstatemicroapp'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: 'terraform.tfstate'
+    
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Validate'
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'
+        workingDirectory: '$(terraformWorkingDirectory)'
+    
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Plan'
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(terraformWorkingDirectory)'
+        environmentServiceNameAzureRM: 'AzureServiceConnect'
+        publishPlanResults: 'TerraformPlan'
+        commandOptions: '-out=$(terraformWorkingDirectory)/tfplan'
+    
+    # Publicar artefactos para que estén disponibles en las siguientes etapas
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publicar artefactos de Terraform'
+      inputs:
+        targetPath: '$(terraformWorkingDirectory)'
+        artifact: 'terraform-files'
+
+- stage: Deploy
+  displayName: 'Desplegar Infraestructura'
+  dependsOn: Validate
+  jobs:
+  - deployment: DeployTerraform
+    displayName: 'Aplicar Terraform'
+    environment: 'Production'  # Crea este ambiente en Azure DevOps
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Descargar artefactos de Terraform'
+            inputs:
+              buildType: 'current'
+              artifactName: 'terraform-files'
+              targetPath: '$(terraformWorkingDirectory)'
+          
+          - task: TerraformInstaller@0
+            displayName: 'Instalar Terraform $(terraformVersion)'
+            inputs:
+              terraformVersion: $(terraformVersion)
+          
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform Init'
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: '$(terraformWorkingDirectory)'
+              backendServiceArm: 'AzureServiceConnect'
+              backendAzureRmResourceGroupName: 'rg-microservice-app'
+              backendAzureRmStorageAccountName: 'tfstatemicroapp'
+              backendAzureRmContainerName: 'tfstate'
+              backendAzureRmKey: 'terraform.tfstate'
+          
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform Apply'
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              workingDirectory: '$(terraformWorkingDirectory)'
+              environmentServiceNameAzureRM: 'AzureServiceConnect'
+              commandOptions: '-auto-approve $(terraformWorkingDirectory)/tfplan'
+
+- stage: Test
+  displayName: 'Pruebas Post-Despliegue'
+  dependsOn: Deploy
+  jobs:
+  - job: TestInfrastructure
+    displayName: 'Verificar Infraestructura'
+    steps:
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Descargar artefactos de Terraform'
+      inputs:
+        buildType: 'current'
+        artifactName: 'terraform-files'
+        targetPath: '$(terraformWorkingDirectory)'
+    
+    - task: TerraformInstaller@0
+      displayName: 'Instalar Terraform $(terraformVersion)'
+      inputs:
+        terraformVersion: $(terraformVersion)
+    
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(terraformWorkingDirectory)'
+        backendServiceArm: 'AzureServiceConnect'
+        backendAzureRmResourceGroupName: 'rg-microservice-app'
+        backendAzureRmStorageAccountName: 'tfstatemicroapp'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: 'terraform.tfstate'
+    
+    - task: TerraformTaskV4@4
+      displayName: 'Verificar Outputs'
+      inputs:
+        provider: 'azurerm'
+        command: 'output'
+        workingDirectory: '$(terraformWorkingDirectory)'
+    
+    # Test HTTP de los endpoints después del despliegue
+    - bash: |
+        # Extraer URLs de los outputs de Terraform
+        FRONTEND_URL=$(terraform -chdir=$(terraformWorkingDirectory) output -raw frontend_url 2>/dev/null || echo "No disponible")
+        GATEWAY_URL=$(terraform -chdir=$(terraformWorkingDirectory) output -raw api_gateway_url 2>/dev/null || echo "No disponible")
+        
+        echo "Verificando acceso a Frontend: $FRONTEND_URL"
+        if [ "$FRONTEND_URL" != "No disponible" ]; then
+          curl -s -o /dev/null -w "%{http_code}" $FRONTEND_URL
+          if [ $? -eq 0 ]; then
+            echo "Frontend accesible correctamente"
+          else
+            echo "Error al acceder al Frontend"
+          fi
+        fi
+        
+        echo "Verificando acceso a API Gateway: $GATEWAY_URL"
+        if [ "$GATEWAY_URL" != "No disponible" ]; then
+          curl -s -o /dev/null -w "%{http_code}" $GATEWAY_URL
+          if [ $? -eq 0 ]; then
+            echo "API Gateway accesible correctamente"
+          else
+            echo "Error al acceder al API Gateway"
+          fi
+        fi
+      displayName: 'Verificar Endpoints'
