@@ -7,6 +7,7 @@ crash.log
 
 # Terraform plan output
 *.tfplan
+tfplan
 
 # Sensitive variable files
 *.tfvars
