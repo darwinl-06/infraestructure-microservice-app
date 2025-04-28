@@ -23,8 +23,8 @@ stages:
     - task: CopyFiles@2
       displayName: 'Copiar archivos de Terraform'
       inputs:
-        SourceFolder: '$(System.DefaultWorkingDirectory)/infraestructure-microservice-app'
-        Contents: '**'
+        SourceFolder: '$(System.DefaultWorkingDirectory)'
+        Contents: '**/*.tf'
         TargetFolder: '$(terraformWorkingDirectory)'
     
     - task: TerraformInstaller@0
