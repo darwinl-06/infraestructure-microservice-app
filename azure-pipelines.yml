@@ -44,6 +44,12 @@ stages:
         backendAzureRmContainerName: 'tfstate'
         backendAzureRmKey: 'terraform.tfstate'
     
+    # Fix permissions for terraform providers
+    - bash: |
+        echo "Fixing permissions for terraform providers"
+        chmod -R 755 $(terraformWorkingDirectory)/.terraform/providers/
+      displayName: 'Fix Terraform Provider Permissions'
+      
     - task: TerraformTaskV4@4
       displayName: 'Terraform Validate'
       inputs:
@@ -103,6 +109,12 @@ stages:
               backendAzureRmContainerName: 'tfstate'
               backendAzureRmKey: 'terraform.tfstate'
           
+          # Fix permissions for terraform providers
+          - bash: |
+              echo "Fixing permissions for terraform providers"
+              chmod -R 755 $(terraformWorkingDirectory)/.terraform/providers/
+            displayName: 'Fix Terraform Provider Permissions'
+          
           - task: TerraformTaskV4@4
             displayName: 'Terraform Apply'
             inputs:
@@ -142,6 +154,12 @@ stages:
         backendAzureRmStorageAccountName: 'tfstatemicroapp'
         backendAzureRmContainerName: 'tfstate'
         backendAzureRmKey: 'terraform.tfstate'
+    
+    # Fix permissions for terraform providers
+    - bash: |
+        echo "Fixing permissions for terraform providers"
+        chmod -R 755 $(terraformWorkingDirectory)/.terraform/providers/
+      displayName: 'Fix Terraform Provider Permissions'
     
     - task: TerraformTaskV4@4
       displayName: 'Verificar Outputs'
