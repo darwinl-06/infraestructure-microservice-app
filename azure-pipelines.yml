@@ -32,6 +32,18 @@ stages:
       inputs:
         terraformVersion: $(terraformVersion)
     
+    # Verificar permisos de Azure antes de ejecutar Terraform
+    - task: AzureCLI@2
+      displayName: 'Verificar permisos de Azure'
+      inputs:
+        azureSubscription: 'AzureServiceConnect'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Verificando permisos de la conexión de servicio..."
+          az account show
+          az provider list --query "[].{Provider:namespace, RegistrationState:registrationState}" --output table
+    
     - task: TerraformTaskV4@4
       displayName: 'Terraform Init'
       inputs:
