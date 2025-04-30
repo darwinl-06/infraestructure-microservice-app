@@ -353,7 +353,7 @@ terraform apply "tfplan"
 
 4. Para ver los outputs después del despliegue:
 ```shell
-terraform output
+terraform output     
 ```
 
 ### Despliegue con Azure DevOps
