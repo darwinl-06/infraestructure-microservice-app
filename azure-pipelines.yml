@@ -167,6 +167,8 @@ stages:
         provider: 'azurerm'
         command: 'output'
         workingDirectory: '$(terraformWorkingDirectory)'
+        environmentServiceNameAzureRM: 'AzureServiceConnect'
+
     
     # Test HTTP de los endpoints después del despliegue
     - bash: |
